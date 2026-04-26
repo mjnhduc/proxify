@@ -15,30 +15,60 @@ npm run dev
 npm start
 ```
 
-Server runs on `http://localhost:3456`. Requires a `.env` file with `ADMIN_USER`, `ADMIN_PASS`, and `SESSION_SECRET`.
+Server runs on `http://localhost:3456`. Requires a `.env` file:
+
+```ini
+ADMIN_USER=admin
+ADMIN_PASS=your_password
+SESSION_SECRET=your_secret
+SUPABASE_URL=https://<project-id>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+```
+
+## Database
+
+Supabase (PostgreSQL). Schema is managed via versioned migration files in `migrations/`.
+
+**Running migrations:**
+```bash
+# Add DATABASE_URL to .env first (Supabase Dashboard → Settings → Database → URI)
+npm run migrate
+```
+
+The script connects via `DATABASE_URL`, creates a `schema_migrations` tracking table on first run, then applies any `.sql` files in `migrations/` that haven't been applied yet. Already-applied versions are skipped.
+
+**Adding a new migration:**
+1. Create `migrations/002_your_description.sql` (increment the number)
+2. Write the SQL using `IF NOT EXISTS` / `IF EXISTS` guards where possible
+3. Run `npm run migrate`
+
+Never edit an already-applied migration file — add a new one instead.
+
+On first boot with an empty `proxies` table, `init()` in `proxyLoader.js` automatically seeds from `assets/all.xlsx`. After that, `all.xlsx` is only read by the Sync and Clear admin operations.
+
+To migrate off Supabase: the schema is plain SQL and runs on any PostgreSQL instance. The only Supabase-specific code is `server/supabase.js` and the query calls in `proxyLoader.js` — swap the client for `pg` if moving to plain Postgres, or self-host Supabase via Docker Compose with zero code changes.
 
 ## Architecture
 
-This is a single-server Node.js/Express app with no build step. The frontend is a vanilla JS SPA served as static files.
+Single-server Node.js/Express app with no build step. Frontend is a vanilla JS SPA served as static files.
 
 **Data flow:**
-- `assets/all.xlsx` — original source file, **never modified**
-- `assets/working.xlsx` — auto-cloned from `all.xlsx` on first run; receives all mutations
-- `assets/archived.xlsx` — proxies moved out of working set
+- `assets/all.xlsx` — original source file, **never modified** at runtime
+- Supabase `proxies` table — single table with `is_archived` boolean replacing the old two-file split
 
-All proxy data lives **in-memory** (`activeProxies` / `archivedProxies` arrays in `proxyLoader.js`) and is flushed to Excel on every mutation. There is no database.
+**`.env` is loaded at the very top of `server/index.js`** before any `require()` calls, because `server/supabase.js` reads `process.env` at module load time. Do not move the env-loading block below the requires.
 
-**Proxy identity:** Each proxy gets a stable 12-char MD5 ID derived from its `host:port` string (`proxyLoader.js:generateId`). This ID is used across all API routes.
+**Proxy identity:** Stable 12-char MD5 of the raw `HOST PORT` string (`host:port:user:pass`). If that string changes in `all.xlsx`, the proxy gets a new ID and sync will insert it as a new row rather than update the existing one.
 
-**Excel column schema** (defined in `proxyLoader.js:COLUMNS`):
+**Excel column schema** (`HOST PORT` is the key field):
 `TYPE | HOST PORT | IPv4 | IPv6 | GEO | TIME ZONE | CITY | IPS | MS | STATUS`
 
-The `HOST PORT` field encodes `host:port:username:password` as a colon-delimited string; passwords may contain `:`.
+The `HOST PORT` field encodes `host:port:username:password`; passwords may contain `:` and are parsed with `parts.slice(3).join(':')`.
 
-**Auth:** Cookie-based using a plain secret token (`SESSION_SECRET`). The token value *is* the session — no session store, no JWT. All routes except `/login.html`, `/index.css`, and `/api/login` are protected.
+**Auth:** Cookie-based. The `SESSION_SECRET` value is stored directly as the cookie value and compared on every request — no session store. All routes except `/login.html`, `/index.css`, and `/api/login` are protected.
 
-**ISP classification** (`classifier.js`): keyword matching against `DATACENTER_KEYWORDS`; anything that doesn't match is classified as `residential`.
+**ISP classification** (`classifier.js`): keyword matching against `DATACENTER_KEYWORDS`; defaults to `residential` if no match, `unknown` if ISP is blank.
 
 **Proxy checking** (`proxyChecker.js`): routes HTTP through the proxy to `httpbin.org/ip` with a 10-second timeout. Returns `{ alive, latency, externalIp, error }`.
 
-**Frontend** (`public/app.js`): single `app.js` file manages all state and DOM updates for both the Active and Archived tabs. ISP autocomplete, pagination, and live-check status updates are handled client-side without any framework.
+**Frontend** (`public/app.js`): single file manages all state and DOM updates for the Active and Archived tabs. No framework, no bundler.

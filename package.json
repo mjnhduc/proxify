@@ -5,12 +5,15 @@
   "main": "server/index.js",
   "scripts": {
     "dev": "node --watch server/index.js",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "migrate": "node scripts/migrate.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.104.1",
     "express": "^4.21.0",
-    "xlsx": "^0.18.5",
     "http-proxy-agent": "^7.0.0",
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "pg": "^8.20.0",
+    "xlsx": "^0.18.5"
   }
 }

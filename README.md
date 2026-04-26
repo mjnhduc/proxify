@@ -1,20 +1,18 @@
 # Proxy Management Portal
 
-A premium Node.js web dashboard to securely manage, filter, check, and organize a large database of HTTP proxies loaded from Excel files.
-
-![Proxy Portal](https://raw.githubusercontent.com/placeholder-image) <!-- Add a screenshot here later -->
+A Node.js web dashboard to manage, filter, check, and organize a large database of HTTP proxies. Backed by Supabase (PostgreSQL).
 
 ## Features
 
-- **Working Copy Architecture**: The system protects your original `all.xlsx` file. It automatically clones it into a `working.xlsx` file and applies all checks, mutations, and archives there, preventing data corruption.
-- **Smart ISP Autocomplete**: Replaces clunky dropdowns with a real-time, searchable autocomplete for ISPs with hit counts and keyboard navigation.
-- **Live Proxy Checking**: Asynchronously check proxies (`📡`) against `httpbin.org`. Visually seamless DOM updates mean the UI never jumps or flickers during checking.
-- **Quick Row Copy**: A dedicated button (`📋`) on each row instantly copies the proxy string (`host:port:user:pass`) to your clipboard.
-- **Admin Tab (`⚙️`)**:
-  - **Sync Data**: If you update the original `all.xlsx` file externally, the sync function merges in new proxies without wiping your checked/archived history.
-  - **Clear Data**: Nuke the working files and start fresh from the original file.
-- **Authentication**: Secured by a session-cookie-based custom login page to prevent unauthorized access.
-- **Premium UI**: Glassmorphism aesthetic, dark mode tokens, and smooth micro-animations.
+- **Protected Original**: `assets/all.xlsx` is never modified. It's the source of truth for seeding and syncing.
+- **Smart ISP Autocomplete**: Real-time searchable autocomplete for ISPs with hit counts and keyboard navigation.
+- **Live Proxy Checking**: Asynchronously check proxies against `httpbin.org`. DOM updates are seamless with no UI flicker.
+- **Quick Row Copy**: Instantly copies `host:port:user:pass` to clipboard.
+- **Admin Tab**:
+  - **Sync Data**: Merges new proxies from `all.xlsx` into the database without touching existing checked/archived history.
+  - **Clear Data**: Wipes the database and re-seeds from `all.xlsx`.
+- **Authentication**: Session-cookie login page.
+- **Premium UI**: Glassmorphism aesthetic, dark mode, smooth micro-animations.
 
 ---
 
@@ -22,21 +20,21 @@ A premium Node.js web dashboard to securely manage, filter, check, and organize 
 
 ```text
 proxies/
-├── .env                  # Secure credentials (git-ignored)
+├── .env                  # Credentials (git-ignored)
 ├── assets/
-│   ├── all.xlsx          # Original source proxy list (read-only)
-│   ├── working.xlsx      # Working copy (auto-generated)
-│   └── archived.xlsx     # Archived/dead proxies (auto-generated)
+│   └── all.xlsx          # Original source proxy list (never modified at runtime)
+├── migrations/           # Versioned SQL schema files
 ├── server/
-│   ├── index.js          # Express server with Auth & API Routes
-│   ├── proxyLoader.js    # Excel read/write, working copy management
-│   ├── proxyChecker.js   # Live check via HTTP request through proxy
+│   ├── index.js          # Express server, auth, API routes
+│   ├── supabase.js       # Supabase client
+│   ├── proxyLoader.js    # All database read/write operations
+│   ├── proxyChecker.js   # Live proxy check via HTTP
 │   └── classifier.js     # Residential vs Datacenter ISP classification
 ├── public/
-│   ├── index.html        # Main SPA shell (Dashboard)
-│   ├── login.html        # Authentication page
-│   ├── index.css         # Design system & styles (Dark Mode)
-│   └── app.js            # Frontend SPA logic (State, UI Updates)
+│   ├── index.html        # SPA shell
+│   ├── login.html        # Login page
+│   ├── index.css         # Styles (dark mode)
+│   └── app.js            # Frontend logic
 └── package.json
 ```
 
@@ -45,60 +43,69 @@ proxies/
 ## Setup & Installation
 
 ### 1. Prerequisites
-Ensure you have [Node.js](https://nodejs.org/) installed (v18+ recommended).
+
+- [Node.js](https://nodejs.org/) v18+
+- A [Supabase](https://supabase.com) project (free tier is sufficient)
 
 ### 2. Install Dependencies
+
 ```bash
 npm install
 ```
 
-### 3. Environment Variables
-Create a `.env` file in the root directory (this file is ignored by git). Add the following variables to configure your administrator credentials:
+### 3. Create the Database Table
+
+In your Supabase project, go to **SQL Editor** and run the contents of `migrations/001_initial_schema.sql`.
+
+### 4. Environment Variables
+
+Create a `.env` file in the root directory:
 
 ```ini
 ADMIN_USER=admin
 ADMIN_PASS=your_secure_password
 SESSION_SECRET=a_random_secret_string
+SUPABASE_URL=https://<your-project-id>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
 ```
 
-### 4. Provide the Data
-Ensure your source Excel file is placed at `assets/all.xlsx`. The application expects the following column structure:
-- Host
-- Port
-- Username
-- Password
-- ... (Additional columns like City, Country, ISP are supported)
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are found in **Supabase Dashboard → Settings → API**.
 
-### 5. Start the Server
-For development (with auto-reload):
+### 5. Provide the Data
+
+Place your source Excel file at `assets/all.xlsx`. Expected column structure:
+
+`TYPE | HOST PORT | IPv4 | IPv6 | GEO | TIME ZONE | CITY | IPS | MS | STATUS`
+
+The `HOST PORT` column encodes `host:port:username:password` as a single colon-delimited string.
+
+On first boot with an empty database, the server automatically seeds all rows from `all.xlsx`.
+
+### 6. Start the Server
+
 ```bash
+# Development (auto-reload)
 npm run dev
-```
 
-For production:
-```bash
+# Production
 npm start
 ```
 
-### 6. Access the Portal
-Open your browser and navigate to:
-`http://localhost:3456`
-
-You will be prompted to log in using the credentials defined in your `.env` file.
+Open `http://localhost:3456` and log in with your `.env` credentials.
 
 ---
 
-## API Documentation
+## API
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/login` | Authenticate user and issue HTTP-only session cookie |
+| `POST` | `/api/login` | Authenticate and issue session cookie |
 | `GET` | `/api/proxies` | Paginated active proxies with filters |
 | `GET` | `/api/archived` | Paginated archived proxies with filters |
-| `GET` | `/api/stats` | Counts: total active, archived, by country/category |
+| `GET` | `/api/stats` | Counts by total, country, category |
 | `GET` | `/api/filters` | Available filter options |
-| `POST` | `/api/proxies/:id/check` | Check single proxy liveness (updates row status) |
-| `POST` | `/api/proxies/:id/archive` | Move proxy from working → archived |
-| `POST` | `/api/archived/:id/restore` | Move proxy from archived → working |
-| `POST` | `/api/admin/sync` | Append new proxies from original to working copy |
-| `POST` | `/api/admin/clear` | Wipe working/archive files and clone original |
+| `POST` | `/api/proxies/:id/check` | Check single proxy liveness |
+| `POST` | `/api/proxies/:id/archive` | Move proxy to archived |
+| `POST` | `/api/archived/:id/restore` | Restore proxy to active |
+| `POST` | `/api/admin/sync` | Merge new proxies from `all.xlsx` |
+| `POST` | `/api/admin/clear` | Wipe database and re-seed from `all.xlsx` |

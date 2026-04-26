@@ -1,35 +1,28 @@
-/**
- * Express server for the Proxy Management Portal.
- */
+const fs = require('fs');
+const path = require('path');
+
+// Load env before any module that reads process.env at require-time
+if (fs.existsSync(path.join(__dirname, '..', '.env'))) {
+  fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8').split('\n').forEach(line => {
+    const [key, ...values] = line.split('=');
+    if (key && values.length) process.env[key.trim()] = values.join('=').trim();
+  });
+}
 
 const express = require('express');
-const path = require('path');
 const proxyLoader = require('./proxyLoader');
 const { checkProxy } = require('./proxyChecker');
 
 const app = express();
 const PORT = 3456;
 
-// Middleware
 app.use(express.json());
-
-// Load env variables
-const fs = require('fs');
-if (fs.existsSync(path.join(__dirname, '..', '.env'))) {
-  const envConfig = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8').split('\n');
-  envConfig.forEach(line => {
-    const [key, ...values] = line.split('=');
-    if (key && values.length) {
-      process.env[key.trim()] = values.join('=').trim();
-    }
-  });
-}
 
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'proxy-portal-secret';
 
-// Cookie Parser Middleware
+// Cookie parser
 app.use((req, res, next) => {
   req.cookies = req.headers.cookie?.split(';').reduce((acc, c) => {
     const [k, v] = c.trim().split('=');
@@ -39,7 +32,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Login API
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS) {
@@ -49,173 +41,136 @@ app.post('/api/login', (req, res) => {
   res.status(401).json({ error: 'Invalid credentials' });
 });
 
-// Auth Middleware (protects all following routes and static files)
+// Auth middleware
 app.use((req, res, next) => {
-  // Allow public access to login page and assets
   if (req.path === '/login.html' || req.path === '/index.css' || req.path === '/api/login') {
     return next();
   }
-
-  // Check auth
   if (req.cookies['auth_token'] === SESSION_SECRET) {
     return next();
   }
-
-  // If API request, return 401. Otherwise redirect to login.
   if (req.path.startsWith('/api/')) {
     return res.status(401).json({ error: 'Unauthorized' });
-  } else {
-    return res.redirect('/login.html');
   }
+  return res.redirect('/login.html');
 });
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Initialize proxy data
-proxyLoader.init();
-
 // ─── API Routes ──────────────────────────────────────────────
 
-/**
- * GET /api/stats — Dashboard statistics
- */
-app.get('/api/stats', (req, res) => {
-  res.json(proxyLoader.getStats());
+app.get('/api/stats', async (req, res) => {
+  try {
+    res.json(await proxyLoader.getStats());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-/**
- * GET /api/filters — Available filter options for active proxies
- */
-app.get('/api/filters', (req, res) => {
-  const isArchived = req.query.archived === 'true';
-  res.json(proxyLoader.getFilters(isArchived));
+app.get('/api/filters', async (req, res) => {
+  try {
+    const isArchived = req.query.archived === 'true';
+    res.json(await proxyLoader.getFilters(isArchived));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-/**
- * GET /api/proxies — Paginated active proxies with filters
- */
-app.get('/api/proxies', (req, res) => {
-  const { page = 1, limit = 50, country, isp, category, search } = req.query;
-  const result = proxyLoader.getActiveProxies({
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    country,
-    isp,
-    category,
-    search,
-  });
-  res.json(result);
+app.get('/api/proxies', async (req, res) => {
+  try {
+    const { page = 1, limit = 50, country, isp, category, search } = req.query;
+    res.json(await proxyLoader.getActiveProxies({
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      country, isp, category, search,
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-/**
- * GET /api/archived — Paginated archived proxies with filters
- */
-app.get('/api/archived', (req, res) => {
-  const { page = 1, limit = 50, country, isp, category, search } = req.query;
-  const result = proxyLoader.getArchivedProxies({
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    country,
-    isp,
-    category,
-    search,
-  });
-  res.json(result);
+app.get('/api/archived', async (req, res) => {
+  try {
+    const { page = 1, limit = 50, country, isp, category, search } = req.query;
+    res.json(await proxyLoader.getArchivedProxies({
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      country, isp, category, search,
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-/**
- * POST /api/proxies/:id/check — Check if a proxy is alive
- */
 app.post('/api/proxies/:id/check', async (req, res) => {
   const { id } = req.params;
   const isArchived = req.query.archived === 'true';
-  
-  const proxy = isArchived
-    ? proxyLoader.getArchivedProxy(id)
-    : proxyLoader.getActiveProxy(id);
-  
-  if (!proxy) {
-    return res.status(404).json({ error: 'Proxy not found' });
-  }
-  
+
   try {
+    const proxy = isArchived
+      ? await proxyLoader.getArchivedProxy(id)
+      : await proxyLoader.getActiveProxy(id);
+
+    if (!proxy) return res.status(404).json({ error: 'Proxy not found' });
+
     const result = await checkProxy(proxy);
-    proxyLoader.updateProxyStatus(
-      id,
-      result.alive ? 'LIVE' : 'DIE',
-      result.latency,
-      isArchived
-    );
-    
-    res.json({
-      ...result,
-      status: result.alive ? 'LIVE' : 'DIE',
-    });
+    await proxyLoader.updateProxyStatus(id, result.alive ? 'LIVE' : 'DIE', result.latency);
+
+    res.json({ ...result, status: result.alive ? 'LIVE' : 'DIE' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * POST /api/proxies/:id/archive — Move proxy from active to archived
- */
-app.post('/api/proxies/:id/archive', (req, res) => {
-  const { id } = req.params;
-  const proxy = proxyLoader.archiveProxy(id);
-  
-  if (!proxy) {
-    return res.status(404).json({ error: 'Proxy not found' });
-  }
-  
-  res.json({ success: true, proxy });
-});
-
-/**
- * POST /api/archived/:id/restore — Move proxy from archived to active
- */
-app.post('/api/archived/:id/restore', (req, res) => {
-  const { id } = req.params;
-  const proxy = proxyLoader.restoreProxy(id);
-  
-  if (!proxy) {
-    return res.status(404).json({ error: 'Proxy not found' });
-  }
-  
-  res.json({ success: true, proxy });
-});
-
-/**
- * POST /api/admin/sync — Sync new proxies from all.xlsx
- */
-app.post('/api/admin/sync', (req, res) => {
+app.post('/api/proxies/:id/archive', async (req, res) => {
   try {
-    const result = proxyLoader.syncFromOriginal();
-    res.json({ success: true, ...result });
+    const proxy = await proxyLoader.archiveProxy(req.params.id);
+    if (!proxy) return res.status(404).json({ error: 'Proxy not found' });
+    res.json({ success: true, proxy });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * POST /api/admin/clear — Clear system data and reload from all.xlsx
- */
-app.post('/api/admin/clear', (req, res) => {
+app.post('/api/archived/:id/restore', async (req, res) => {
   try {
-    const result = proxyLoader.clearData();
-    res.json({ success: true, ...result });
+    const proxy = await proxyLoader.restoreProxy(req.params.id);
+    if (!proxy) return res.status(404).json({ error: 'Proxy not found' });
+    res.json({ success: true, proxy });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── Catch-all: serve index.html for SPA ────────────────────
+app.post('/api/admin/sync', async (_req, res) => {
+  try {
+    res.json({ success: true, ...await proxyLoader.syncFromOriginal() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-app.get('*', (req, res) => {
+app.post('/api/admin/clear', async (_req, res) => {
+  try {
+    res.json({ success: true, ...await proxyLoader.clearData() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-// ─── Start Server ───────────────────────────────────────────
+// ─── Start after DB is ready ─────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 Proxy Portal running at http://localhost:${PORT}\n`);
-});
+proxyLoader.init()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n🚀 Proxy Portal running at http://localhost:${PORT}\n`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to initialize:', err.message);
+    process.exit(1);
+  });
