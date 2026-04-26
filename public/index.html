@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Proxy Management Portal — Manage, check, and organize HTTP proxies">
+  <title>Proxy Portal</title>
+  <link rel="stylesheet" href="/index.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌐</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="container">
+        <div class="header-brand">
+          <div class="header-logo">P</div>
+          <h1 class="header-title">Proxy <span>Portal</span></h1>
+        </div>
+        <div class="header-stats" id="headerStats"></div>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs-bar">
+      <div class="container" style="display: flex;">
+        <div style="display: flex; gap: 0;">
+          <button class="tab-btn active" data-tab="active" id="tabActive">
+            🟢 Active Proxies <span class="tab-count" id="tabActiveCount">0</span>
+          </button>
+          <button class="tab-btn" data-tab="archived" id="tabArchived">
+            📦 Archived <span class="tab-count" id="tabArchivedCount">0</span>
+          </button>
+        </div>
+        <button class="tab-btn" data-tab="admin" id="tabAdmin" style="margin-left: auto;">
+          ⚙️ Admin
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container">
+      <!-- Stats -->
+      <div class="stats-grid" id="statsGrid"></div>
+
+      <!-- Toolbar -->
+      <div class="toolbar" id="toolbar">
+        <div class="toolbar-group">
+          <div class="search-wrapper">
+            <input type="text" class="search-input" id="searchInput" placeholder="Search IP, host, city, ISP..." />
+          </div>
+        </div>
+        <div class="toolbar-group">
+          <select class="filter-select" id="filterCountry">
+            <option value="">All Countries</option>
+          </select>
+          <select class="filter-select" id="filterCategory">
+            <option value="">All Types</option>
+            <option value="residential">🏠 Residential</option>
+            <option value="datacenter">🏢 Datacenter</option>
+          </select>
+          <div class="autocomplete-wrapper" id="ispAutocomplete">
+            <input type="text" class="filter-input" id="filterISP" placeholder="Search ISP..." autocomplete="off" />
+            <div class="autocomplete-dropdown" id="ispDropdown"></div>
+          </div>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <div class="toolbar-group">
+          <button class="btn" id="btnClearFilters" title="Clear all filters">✕ Clear</button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="table-wrapper">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" class="checkbox" id="selectAll" title="Select all on this page" /></th>
+                <th>#</th>
+                <th>Host : Port</th>
+                <th>Country</th>
+                <th>City</th>
+                <th>ISP</th>
+                <th>Type</th>
+                <th>Latency</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="proxyTableBody">
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination" id="pagination">
+          <div class="pagination-info" id="paginationInfo"></div>
+          <div class="pagination-controls" id="paginationControls"></div>
+        </div>
+      </div>
+      
+      <!-- Admin Panel (Hidden by default) -->
+      <div id="adminPanel" style="display: none; padding: 40px 0;">
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; max-width: 600px; margin: 0 auto;">
+          <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; gap: 8px;">⚙️ Admin Controls</h2>
+          
+          <div style="margin-bottom: 32px;">
+            <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 8px;">Sync Data</h3>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Pull new proxies from the original <code>all.xlsx</code> file into the current system. This will not overwrite existing active or archived proxies, it only adds new ones.</p>
+            <button class="btn btn-primary" id="btnSyncData">🔄 Sync from all.xlsx</button>
+          </div>
+          
+          <div style="border-top: 1px solid var(--border); padding-top: 32px;">
+            <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--danger);">Danger Zone</h3>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Clear all current system data (including your working copy and archived proxies) and start fresh from the original <code>all.xlsx</code> file.</p>
+            <button class="btn btn-danger" id="btnClearData">⚠️ Clear All Data & Restart</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Floating action bar for selected proxies -->
+    <div class="floating-bar" id="floatingBar">
+      <span class="floating-bar-count" id="selectedCount">0 selected</span>
+      <div class="floating-bar-divider"></div>
+      <button class="btn btn-primary btn-sm" id="btnCopySelected">📋 Copy to Clipboard</button>
+      <button class="btn btn-sm" id="btnDeselectAll">✕ Deselect</button>
+    </div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toastContainer"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
